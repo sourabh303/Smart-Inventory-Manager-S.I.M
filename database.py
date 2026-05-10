@@ -94,7 +94,27 @@ def get_db():
         conn.close()
 
 
+# === NEW: Helper to get active orders for a chat ===
+def get_active_orders(chat_id, minutes=10):
+    """
+    Return recent orders in this chat within the last N minutes.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM orders
+            WHERE chat_id = ?
+                AND datetime(created_at) >= datetime('now', ?)
+                AND status = 'PENDING'
+            ORDER BY created_at DESC
+            """,
+            (chat_id, f'-{minutes} minutes')
+        ).fetchall()
+        return [dict(r) for r in rows]
+
 def init_db():
+    with get_db() as conn:
+        conn.executescript("""
             -- NEW: Orders table for structured order tracking
             CREATE TABLE IF NOT EXISTS orders (
                 order_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,25 +142,7 @@ def init_db():
                 mapped_order_id INTEGER,
                 confidence_score REAL
             );
-    # === NEW: Helper to get active orders for a chat ===
-    def get_active_orders(chat_id, minutes=10):
-            """
-            Return recent orders in this chat within the last N minutes.
-            """
-            with get_db() as conn:
-                    rows = conn.execute(
-                            """
-                            SELECT * FROM orders
-                            WHERE chat_id = ?
-                                AND datetime(created_at) >= datetime('now', ?)
-                                AND status = 'PENDING'
-                            ORDER BY created_at DESC
-                            """,
-                            (chat_id, f'-{minutes} minutes')
-                    ).fetchall()
-                    return [dict(r) for r in rows]
-    with get_db() as conn:
-        conn.executescript("""
+
             CREATE TABLE IF NOT EXISTS inventory (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 item_name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
