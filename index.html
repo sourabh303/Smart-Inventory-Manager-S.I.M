@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockWatch — Inventory Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ─── CSS Variables ──────────────────────────────────────────────────────── */
+:root {
+  --bg:        #0a0b0e;
+  --surface:   #111318;
+  --surface2:  #181b22;
+  --border:    #232733;
+  --border2:   #2d3244;
+
+  --text:      #e8eaf0;
+  --text2:     #8b91a8;
+  --text3:     #555d78;
+
+  --green:     #22c55e;
+  --green-dim: #14532d;
+  --yellow:    #eab308;
+  --yellow-dim:#713f12;
+  --red:       #ef4444;
+  --red-dim:   #7f1d1d;
+  --blue:      #3b82f6;
+  --blue-dim:  #1e3a8a;
+  --orange:    #f97316;
+  --orange-dim:#7c2d12;
+
+  --accent:    #6366f1;
+  --accent2:   #818cf8;
+
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'Syne', sans-serif;
+
+  --radius: 4px;
+  --radius2: 8px;
+}
+
+/* ─── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ─── Scanline overlay ────────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ─── Header ─────────────────────────────────────────────────────────────── */
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 60px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-family: var(--sans);
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo-icon {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: var(--radius);
+  display: grid; place-items: center;
+  font-size: 16px;
+}
+.logo-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+#live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text3);
+  letter-spacing: 0.5px;
+}
+.live-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 5px rgba(34,197,94,0); }
+}
+
+#last-update {
+  font-size: 11px;
+  color: var(--text3);
+  letter-spacing: 0.3px;
+}
+
+/* ─── Layout ─────────────────────────────────────────────────────────────── */
+#layout {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  min-height: calc(100vh - 60px);
+}
+
+/* ─── Sidebar ─────────────────────────────────────────────────────────────── */
+#sidebar {
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  padding: 24px 0;
+  position: sticky;
+  top: 60px;
+  height: calc(100vh - 60px);
+  overflow-y: auto;
+}
+
+.nav-section {
+  padding: 0 16px;
+  margin-bottom: 24px;
+}
+.nav-label {
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text3);
+  font-weight: 600;
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 400;
+  transition: all 0.15s;
+  border: 1px solid transparent;
+  margin-bottom: 2px;
+  user-select: none;
+}
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item.active {
+  background: rgba(99,102,241,0.12);
+  color: var(--accent2);
+  border-color: rgba(99,102,241,0.25);
+}
+.nav-icon { font-size: 14px; width: 18px; text-align: center; }
+.nav-badge {
+  margin-left: auto;
+  background: var(--red);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  display: none;
+}
+.nav-badge.visible { display: block; }
+
+/* ─── Main content ────────────────────────────────────────────────────────── */
+#main {
+  overflow-y: auto;
+  padding: 28px;
+}
+
+/* ─── Views ──────────────────────────────────────────────────────────────── */
+.view { display: none; }
+.view.active { display: block; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+
+/* ─── Section header ─────────────────────────────────────────────────────── */
+.section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.section-title {
+  font-family: var(--sans);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+.section-sub {
+  font-size: 11px;
+  color: var(--text3);
+}
+
+/* ─── Stat cards ──────────────────────────────────────────────────────────── */
+#stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: var(--border2); }
+.stat-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: var(--accent-color, var(--accent));
+}
+
+.stat-label {
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.stat-value {
+  font-family: var(--sans);
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+  letter-spacing: -1px;
+}
+.stat-delta {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text3);
+}
+
+/* ─── Alert banner ────────────────────────────────────────────────────────── */
+#alert-banner {
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: var(--radius2);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  display: none;
+  gap: 10px;
+  align-items: center;
+}
+#alert-banner.visible { display: flex; }
+.alert-icon { font-size: 16px; }
+.alert-text { font-size: 12px; color: #fca5a5; flex: 1; }
+.alert-items { font-weight: 700; }
+
+/* ─── Two-column layout for dashboard ────────────────────────────────────── */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 20px;
+}
+
+/* ─── Panel / card ────────────────────────────────────────────────────────── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  overflow: hidden;
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-title {
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+.panel-action {
+  font-size: 11px;
+  color: var(--accent2);
+  cursor: pointer;
+  letter-spacing: 0.3px;
+}
+.panel-action:hover { text-decoration: underline; }
+.panel-body { padding: 0; }
+
+/* ─── Inventory table ────────────────────────────────────────────────────── */
+.inv-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.inv-table th {
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.inv-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  vertical-align: middle;
+}
+.inv-table tr:last-child td { border-bottom: none; }
+.inv-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.item-name {
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+.item-qty {
+  color: var(--text2);
+  font-size: 11px;
+}
+.item-cat {
+  color: var(--text3);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Status badge */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.status-available    { background: var(--green-dim);  color: #86efac; }
+.status-low          { background: var(--yellow-dim); color: #fde047; }
+.status-not_available{ background: var(--red-dim);    color: #fca5a5; }
+.status-ordered      { background: var(--blue-dim);   color: #93c5fd; }
+
+/* ─── Recent activity feed ────────────────────────────────────────────────── */
+.feed-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.feed-item:last-child { border-bottom: none; }
+.feed-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.feed-dot-green  { background: var(--green); }
+.feed-dot-yellow { background: var(--yellow); }
+.feed-dot-red    { background: var(--red); }
+.feed-dot-blue   { background: var(--blue); }
+.feed-dot-gray   { background: var(--text3); }
+.feed-content    { flex: 1; }
+.feed-main       { color: var(--text); margin-bottom: 2px; }
+.feed-time       { color: var(--text3); font-size: 10px; }
+
+/* ─── Requests table ──────────────────────────────────────────────────────── */
+.req-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 16px;
+  background: var(--surface);
+}
+.req-tab {
+  padding: 10px 14px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text3);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+  letter-spacing: 0.3px;
+}
+.req-tab:hover { color: var(--text2); }
+.req-tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+.req-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.req-table th {
+  padding: 8px 14px;
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.req-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.req-table tr:last-child td { border-bottom: none; }
+.req-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+.req-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.req-pending   { background: rgba(234,179,8,0.15);  color: #fde047; }
+.req-ordered   { background: rgba(59,130,246,0.15); color: #93c5fd; }
+.req-received  { background: rgba(34,197,94,0.15);  color: #86efac; }
+.req-cancelled { background: rgba(100,116,139,0.15);color: #94a3b8; }
+.req-done      { background: rgba(34,197,94,0.15);  color: #86efac; }
+
+/* ─── Logs view ───────────────────────────────────────────────────────────── */
+.log-entry {
+  display: grid;
+  grid-template-columns: 140px 100px 1fr 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  transition: background 0.1s;
+}
+.log-entry:hover { background: rgba(255,255,255,0.02); }
+.log-entry:last-child { border-bottom: none; }
+
+.log-ts    { color: var(--text3); font-size: 10px; white-space: nowrap; }
+.log-type  { }
+.log-detail{ color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-actor { color: var(--text3); text-align: right; }
+
+.event-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.tag-status_update   { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+.tag-item_added      { background: rgba(34,197,94,0.15);  color: #86efac; }
+.tag-request_created { background: rgba(234,179,8,0.15);  color: #fde047; }
+.tag-request_update  { background: rgba(59,130,246,0.15); color: #93c5fd; }
+.tag-seed            { background: rgba(100,116,139,0.15);color: #94a3b8; }
+.tag-default         { background: rgba(100,116,139,0.1); color: var(--text3); }
+
+/* ─── Toolbar / search ───────────────────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  flex: 1;
+  min-width: 180px;
+  max-width: 300px;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0 10px;
+  gap: 8px;
+}
+.search-box:focus-within { border-color: var(--accent); }
+.search-icon { color: var(--text3); font-size: 12px; }
+.search-input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 7px 0;
+  width: 100%;
+}
+.search-input::placeholder { color: var(--text3); }
+
+.filter-btn {
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+.filter-btn:hover { border-color: var(--border2); color: var(--text); }
+.filter-btn.active { background: rgba(99,102,241,0.12); border-color: var(--accent); color: var(--accent2); }
+
+.refresh-btn {
+  padding: 6px 12px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  letter-spacing: 0.3px;
+}
+.refresh-btn:hover { opacity: 0.85; }
+.refresh-btn:active { opacity: 0.7; }
+
+/* ─── Log header ─────────────────────────────────────────────────────────── */
+.log-header {
+  display: grid;
+  grid-template-columns: 140px 100px 1fr 120px;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text3);
+  font-weight: 600;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+}
+
+/* ─── Empty state ────────────────────────────────────────────────────────── */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text3);
+}
+.empty-icon { font-size: 36px; margin-bottom: 12px; }
+.empty-text { font-size: 13px; color: var(--text3); }
+
+/* ─── Spinner ─────────────────────────────────────────────────────────────── */
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin: 40px auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  #layout { grid-template-columns: 1fr; }
+  #sidebar { display: none; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .log-entry { grid-template-columns: 120px 80px 1fr; }
+  .log-actor { display: none; }
+  #stat-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ─── Inline category colors ─────────────────────────────────────────────── */
+.cat-grains     { color: #f97316; }
+.cat-pantry     { color: #a78bfa; }
+.cat-dairy      { color: #60a5fa; }
+.cat-vegetables { color: #34d399; }
+.cat-meat       { color: #f87171; }
+.cat-poultry    { color: #fbbf24; }
+.cat-supplies   { color: #94a3b8; }
+.cat-cleaning   { color: #7dd3fc; }
+.cat-general    { color: var(--text3); }
+
+/* ─── Quantity bar mini-chart ────────────────────────────────────────────── */
+.qty-bar-wrap { display: flex; align-items: center; gap: 8px; }
+.qty-bar {
+  flex: 1;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  max-width: 80px;
+}
+.qty-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--green);
+  transition: width 0.5s ease;
+}
+
+/* ─── Toast ───────────────────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius2);
+  padding: 12px 18px;
+  font-size: 12px;
+  color: var(--text);
+  z-index: 9000;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: all 0.3s;
+  pointer-events: none;
+}
+#toast.show { opacity: 1; transform: none; }
+
+/* ─── Connection error ───────────────────────────────────────────────────── */
+#conn-error {
+  position: fixed;
+  top: 68px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.4);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #fca5a5;
+  z-index: 200;
+  display: none;
+}
+#conn-error.visible { display: block; }
+</style>
+</head>
+<body>
+
+<!-- ─── Header ─────────────────────────────────────────────────────────────── -->
+<header id="header">
+  <div class="logo">
+    <div class="logo-icon">📦</div>
+    <div>
+      StockWatch
+      <div class="logo-sub">Inventory Command Center</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div id="live-indicator">
+      <div class="live-dot"></div>
+      LIVE
+    </div>
+    <div id="last-update">—</div>
+  </div>
+</header>
+
+<!-- ─── Layout ─────────────────────────────────────────────────────────────── -->
+<div id="layout">
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Navigation</div>
+      <div class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+        <span class="nav-icon">◈</span> Dashboard
+      </div>
+      <div class="nav-item" data-view="inventory" onclick="switchView('inventory')">
+        <span class="nav-icon">▦</span> Inventory
+      </div>
+      <div class="nav-item" data-view="requests" onclick="switchView('requests')">
+        <span class="nav-icon">◌</span> Requests
+        <span class="nav-badge" id="sidebar-req-badge">0</span>
+      </div>
+      <div class="nav-item" data-view="logs" onclick="switchView('logs')">
+        <span class="nav-icon">≡</span> Activity Log
+      </div>
+    </div>
+
+    <div class="nav-section" style="margin-top: auto;">
+      <div class="nav-label">System</div>
+      <div class="nav-item" onclick="refreshAll()">
+        <span class="nav-icon">↻</span> Refresh
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main id="main">
+
+    <!-- ─── DASHBOARD VIEW ─────────────────────────────────────────────────── -->
+    <div class="view active" id="view-dashboard">
+      <div class="section-header">
+        <div class="section-title">Dashboard</div>
+        <div class="section-sub" id="dash-ts">Loading…</div>
+      </div>
+
+      <!-- Stats -->
+      <div id="stat-grid">
+        <div class="stat-card" style="--accent-color: var(--text3)">
+          <div class="stat-label">Total Items</div>
+          <div class="stat-value" id="s-total">—</div>
+          <div class="stat-delta">in inventory</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--green)">
+          <div class="stat-label">Available</div>
+          <div class="stat-value" id="s-available" style="color:var(--green)">—</div>
+          <div class="stat-delta">in stock</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--yellow)">
+          <div class="stat-label">Low Stock</div>
+          <div class="stat-value" id="s-low" style="color:var(--yellow)">—</div>
+          <div class="stat-delta">needs reorder</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--red)">
+          <div class="stat-label">Out of Stock</div>
+          <div class="stat-value" id="s-out" style="color:var(--red)">—</div>
+          <div class="stat-delta">unavailable</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--blue)">
+          <div class="stat-label">Ordered</div>
+          <div class="stat-value" id="s-ordered" style="color:var(--blue)">—</div>
+          <div class="stat-delta">en route</div>
+        </div>
+        <div class="stat-card" style="--accent-color: var(--orange)">
+          <div class="stat-label">Pending Req</div>
+          <div class="stat-value" id="s-pending" style="color:var(--orange)">—</div>
+          <div class="stat-delta">awaiting action</div>
+        </div>
+      </div>
+
+      <!-- Alert banner -->
+      <div id="alert-banner">
+        <span class="alert-icon">⚠</span>
+        <span class="alert-text">
+          Critical stock alert: <span id="alert-items" class="alert-items"></span>
+          need immediate attention.
+        </span>
+      </div>
+
+      <!-- Two column -->
+      <div class="dash-grid">
+        <!-- Inventory snapshot -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Inventory Snapshot</div>
+            <div class="panel-action" onclick="switchView('inventory')">View all →</div>
+          </div>
+          <div class="panel-body">
+            <table class="inv-table">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="dash-inv-body">
+                <tr><td colspan="3"><div class="spinner"></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent activity -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">Recent Activity</div>
+            <div class="panel-action" onclick="switchView('logs')">All logs →</div>
+          </div>
+          <div id="activity-feed">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /dashboard -->
+
+    <!-- ─── INVENTORY VIEW ─────────────────────────────────────────────────── -->
+    <div class="view" id="view-inventory">
+      <div class="section-header">
+        <div class="section-title">Inventory</div>
+        <div class="section-sub" id="inv-count"></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">⌕</span>
+          <input class="search-input" id="inv-search" type="text" placeholder="Search items…" oninput="filterInventory()">
+        </div>
+        <button class="filter-btn active" onclick="setInvFilter('all', this)">All</button>
+        <button class="filter-btn" onclick="setInvFilter('available', this)">Available</button>
+        <button class="filter-btn" onclick="setInvFilter('low', this)">Low</button>
+        <button class="filter-btn" onclick="setInvFilter('not_available', this)">Out</button>
+        <button class="filter-btn" onclick="setInvFilter('ordered', this)">Ordered</button>
+        <button class="refresh-btn" onclick="loadInventory()">↻ Refresh</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-body">
+          <table class="inv-table" id="inv-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Category</th>
+                <th>Quantity</th>
+                <th>Status</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="inv-tbody">
+              <tr><td colspan="6"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /inventory -->
+
+    <!-- ─── REQUESTS VIEW ──────────────────────────────────────────────────── -->
+    <div class="view" id="view-requests">
+      <div class="section-header">
+        <div class="section-title">Requests</div>
+        <div class="section-sub" id="req-count"></div>
+      </div>
+
+      <div class="req-tabs">
+        <div class="req-tab active" onclick="setReqFilter('all', this)">All</div>
+        <div class="req-tab" onclick="setReqFilter('pending', this)">Pending</div>
+        <div class="req-tab" onclick="setReqFilter('ordered', this)">Ordered</div>
+        <div class="req-tab" onclick="setReqFilter('received', this)">Received</div>
+        <div class="req-tab" onclick="setReqFilter('cancelled', this)">Cancelled</div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-body">
+          <table class="req-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Requested</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="req-tbody">
+              <tr><td colspan="6"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div><!-- /requests -->
+
+    <!-- ─── LOGS VIEW ──────────────────────────────────────────────────────── -->
+    <div class="view" id="view-logs">
+      <div class="section-header">
+        <div class="section-title">Activity Log</div>
+        <div class="section-sub" id="log-count"></div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-box">
+          <span class="search-icon">⌕</span>
+          <input class="search-input" id="log-search" type="text" placeholder="Filter logs…" oninput="filterLogs()">
+        </div>
+        <button class="refresh-btn" onclick="loadEvents()">↻ Refresh</button>
+      </div>
+
+      <div class="panel">
+        <div class="log-header">
+          <div>Timestamp</div>
+          <div>Event</div>
+          <div>Detail</div>
+          <div style="text-align:right">Actor</div>
+        </div>
+        <div id="log-body">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div><!-- /logs -->
+
+  </main>
+</div><!-- /layout -->
+
+<!-- Toast -->
+<div id="toast"></div>
+<!-- Connection error -->
+<div id="conn-error">⚠ Cannot reach backend — make sure Flask is running on port 5050</div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────────────────
+   StockWatch Dashboard — Vanilla JS
+   ─────────────────────────────────────────────────────────────────────────── */
+
+const API = window.location.origin;   // Same origin (Flask serves this HTML)
+
+let _inventory    = [];
+let _requests     = [];
+let _events       = [];
+let _invFilter    = 'all';
+let _reqFilter    = 'all';
+let _currentView  = 'dashboard';
+let _pollTimer    = null;
+
+/* ─── Navigation ──────────────────────────────────────────────────────────── */
+function switchView(name) {
+  _currentView = name;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  const navEl = document.querySelector(`.nav-item[data-view="${name}"]`);
+  if (navEl) navEl.classList.add('active');
+
+  if (name === 'inventory') loadInventory();
+  if (name === 'requests')  loadRequests();
+  if (name === 'logs')      loadEvents();
+}
+
+/* ─── API helpers ─────────────────────────────────────────────────────────── */
+async function apiFetch(path) {
+  try {
+    const res = await fetch(API + path);
+    if (!res.ok) throw new Error(res.status);
+    document.getElementById('conn-error').classList.remove('visible');
+    return await res.json();
+  } catch(e) {
+    document.getElementById('conn-error').classList.add('visible');
+    console.error('API error', path, e);
+    return null;
+  }
+}
+
+/* ─── Formatting helpers ──────────────────────────────────────────────────── */
+function fmtStatus(s) {
+  const labels = {
+    available:     '✓ Available',
+    low:           '⚡ Low',
+    not_available: '✕ Out of Stock',
+    ordered:       '⟳ Ordered',
+  };
+  return `<span class="status-badge status-${s}">${labels[s] || s}</span>`;
+}
+
+function fmtReqStatus(s) {
+  const labels = {
+    pending:   '◌ Pending',
+    ordered:   '⟳ Ordered',
+    received:  '✓ Received',
+    cancelled: '✕ Cancelled',
+    done:      '✓ Done',
+  };
+  return `<span class="req-status-badge req-${s}">${labels[s] || s}</span>`;
+}
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60)  return 'just now';
+  if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return d.toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+}
+
+function fmtDateTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  });
+}
+
+function eventDotClass(type) {
+  const map = {
+    status_update:   'feed-dot-blue',
+    item_added:      'feed-dot-green',
+    request_created: 'feed-dot-yellow',
+    request_update:  'feed-dot-blue',
+    seed:            'feed-dot-gray',
+  };
+  return map[type] || 'feed-dot-gray';
+}
+
+function eventTagClass(type) {
+  return `event-tag tag-${type} ` + (
+    ['status_update','item_added','request_created','request_update','seed'].includes(type)
+    ? '' : 'tag-default'
+  );
+}
+
+function catClass(cat) {
+  return 'cat-' + (cat || 'general').toLowerCase().replace(/\s+/g, '');
+}
+
+/* ─── Stats / Dashboard ───────────────────────────────────────────────────── */
+async function loadStats() {
+  const data = await apiFetch('/api/stats');
+  if (!data) return;
+
+  document.getElementById('s-total').textContent    = data.total_items;
+  document.getElementById('s-available').textContent = data.available;
+  document.getElementById('s-low').textContent       = data.low_stock;
+  document.getElementById('s-out').textContent       = data.out_of_stock;
+  document.getElementById('s-ordered').textContent   = data.ordered;
+  document.getElementById('s-pending').textContent   = data.pending_requests;
+
+  // Alert banner
+  const alertItems = [];
+  if (data.out_of_stock > 0) alertItems.push(`${data.out_of_stock} out of stock`);
+  if (data.low_stock > 0)    alertItems.push(`${data.low_stock} low stock`);
+  const banner = document.getElementById('alert-banner');
+  if (alertItems.length) {
+    document.getElementById('alert-items').textContent = alertItems.join(', ');
+    banner.classList.add('visible');
+  } else {
+    banner.classList.remove('visible');
+  }
+
+  // Sidebar badge
+  const badge = document.getElementById('sidebar-req-badge');
+  if (data.pending_requests > 0) {
+    badge.textContent = data.pending_requests;
+    badge.classList.add('visible');
+  } else {
+    badge.classList.remove('visible');
+  }
+
+  const now = new Date();
+  document.getElementById('last-update').textContent = now.toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('dash-ts').textContent = 'as of ' + now.toLocaleTimeString('en-IN');
+}
+
+async function loadDashInventory() {
+  const data = await apiFetch('/api/inventory');
+  if (!data) return;
+
+  // Show top items — problems first
+  const sorted = [...data.items].sort((a,b) => {
+    const rank = {not_available:0, low:1, ordered:2, available:3};
+    return (rank[a.status]??4) - (rank[b.status]??4);
+  }).slice(0, 10);
+
+  const tbody = document.getElementById('dash-inv-body');
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr><td colspan="3"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">No items yet</div></div></td></tr>`;
+    return;
+  }
+
+  const maxQty = Math.max(...sorted.map(i => i.quantity), 1);
+  tbody.innerHTML = sorted.map(item => {
+    const pct = Math.min(100, Math.round((item.quantity / maxQty) * 100));
+    const barColor = {available:'var(--green)', low:'var(--yellow)', not_available:'var(--red)', ordered:'var(--blue)'}[item.status] || 'var(--text3)';
+    return `<tr>
+      <td><span class="item-name">${item.item_name}</span></td>
+      <td>
+        <div class="qty-bar-wrap">
+          <span class="item-qty">${item.quantity} <small>${item.unit}</small></span>
+          <div class="qty-bar"><div class="qty-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        </div>
+      </td>
+      <td>${fmtStatus(item.status)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadActivityFeed() {
+  const data = await apiFetch('/api/events?limit=12');
+  if (!data) return;
+
+  const feed = document.getElementById('activity-feed');
+  if (!data.events.length) {
+    feed.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">No activity yet</div></div>`;
+    return;
+  }
+
+  feed.innerHTML = data.events.map(e => `
+    <div class="feed-item">
+      <div class="feed-dot ${eventDotClass(e.event_type)}"></div>
+      <div class="feed-content">
+        <div class="feed-main">
+          <b>${e.item_name || '—'}</b>
+          ${e.detail ? `<span style="color:var(--text3)"> — ${e.detail}</span>` : ''}
+        </div>
+        <div class="feed-time">${e.event_type.replace(/_/g,' ')} · ${fmtTime(e.timestamp)}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ─── Inventory view ──────────────────────────────────────────────────────── */
+async function loadInventory() {
+  const data = await apiFetch('/api/inventory');
+  if (!data) return;
+  _inventory = data.items;
+  document.getElementById('inv-count').textContent = `${_inventory.length} items`;
+  renderInventory();
+}
+
+function renderInventory() {
+  const search = (document.getElementById('inv-search').value || '').toLowerCase();
+  let items = _inventory.filter(i => {
+    if (_invFilter !== 'all' && i.status !== _invFilter) return false;
+    if (search && !i.item_name.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  const tbody = document.getElementById('inv-tbody');
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🔍</div><div class="empty-text">No items match filter</div></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = items.map((item, i) => `<tr>
+    <td style="color:var(--text3);font-size:10px">${item.id}</td>
+    <td><span class="item-name">${item.item_name}</span></td>
+    <td><span class="item-cat ${catClass(item.category)}">${item.category}</span></td>
+    <td><span class="item-qty">${item.quantity} ${item.unit}</span></td>
+    <td>${fmtStatus(item.status)}</td>
+    <td style="color:var(--text3);font-size:11px;white-space:nowrap">${fmtTime(item.updated_at)}</td>
+  </tr>`).join('');
+}
+
+function setInvFilter(val, el) {
+  _invFilter = val;
+  document.querySelectorAll('.toolbar .filter-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  renderInventory();
+}
+
+function filterInventory() { renderInventory(); }
+
+/* ─── Requests view ───────────────────────────────────────────────────────── */
+async function loadRequests() {
+  const data = await apiFetch('/api/requests');
+  if (!data) return;
+  _requests = data.requests;
+  document.getElementById('req-count').textContent = `${_requests.length} requests`;
+  renderRequests();
+}
+
+function renderRequests() {
+  let reqs = _reqFilter === 'all' ? _requests : _requests.filter(r => r.status === _reqFilter);
+
+  const tbody = document.getElementById('req-tbody');
+  if (!reqs.length) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">◌</div><div class="empty-text">No requests</div></div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = reqs.map(r => `<tr>
+    <td style="color:var(--text3);font-size:10px">#${r.id}</td>
+    <td><span class="item-name">${r.item_name}</span></td>
+    <td><span class="item-qty">${r.quantity}</span></td>
+    <td>${fmtReqStatus(r.status)}</td>
+    <td style="color:var(--text3);font-size:11px;white-space:nowrap">${fmtTime(r.requested_at)}</td>
+    <td style="color:var(--text3);font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.notes||''}">${r.notes || '—'}</td>
+  </tr>`).join('');
+}
+
+function setReqFilter(val, el) {
+  _reqFilter = val;
+  document.querySelectorAll('.req-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderRequests();
+}
+
+/* ─── Events / Logs view ──────────────────────────────────────────────────── */
+async function loadEvents() {
+  const data = await apiFetch('/api/events?limit=200');
+  if (!data) return;
+  _events = data.events;
+  document.getElementById('log-count').textContent = `${_events.length} entries`;
+  renderLogs();
+}
+
+function renderLogs() {
+  const search = (document.getElementById('log-search').value || '').toLowerCase();
+  let evs = search
+    ? _events.filter(e =>
+        (e.item_name||'').toLowerCase().includes(search) ||
+        (e.detail||'').toLowerCase().includes(search) ||
+        (e.event_type||'').toLowerCase().includes(search) ||
+        (e.actor_name||'').toLowerCase().includes(search)
+      )
+    : _events;
+
+  const body = document.getElementById('log-body');
+  if (!evs.length) {
+    body.innerHTML = `<div class="empty-state"><div class="empty-icon">≡</div><div class="empty-text">No log entries</div></div>`;
+    return;
+  }
+
+  body.innerHTML = evs.map(e => `
+    <div class="log-entry">
+      <div class="log-ts">${fmtDateTime(e.timestamp)}</div>
+      <div class="log-type"><span class="${eventTagClass(e.event_type)}">${e.event_type.replace(/_/g,' ')}</span></div>
+      <div class="log-detail">
+        ${e.item_name ? `<b>${e.item_name}</b>` : ''}
+        ${e.detail ? ` — ${e.detail}` : ''}
+      </div>
+      <div class="log-actor">${e.actor_name || (e.actor_id ? `uid:${e.actor_id}` : 'system')}</div>
+    </div>`).join('');
+}
+
+function filterLogs() { renderLogs(); }
+
+/* ─── Toast ───────────────────────────────────────────────────────────────── */
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+/* ─── Refresh all ─────────────────────────────────────────────────────────── */
+async function refreshAll() {
+  await Promise.all([
+    loadStats(),
+    loadDashInventory(),
+    loadActivityFeed(),
+  ]);
+  if (_currentView === 'inventory') loadInventory();
+  if (_currentView === 'requests')  loadRequests();
+  if (_currentView === 'logs')      loadEvents();
+  toast('↻ Data refreshed');
+}
+
+/* ─── Auto-polling every 15s ─────────────────────────────────────────────── */
+function startPolling() {
+  _pollTimer = setInterval(async () => {
+    await loadStats();
+    await loadDashInventory();
+    await loadActivityFeed();
+    if (_currentView !== 'dashboard') {
+      if (_currentView === 'inventory') await loadInventory();
+      if (_currentView === 'requests')  await loadRequests();
+      if (_currentView === 'logs')      await loadEvents();
+    }
+  }, 15000);
+}
+
+/* ─── Init ───────────────────────────────────────────────────────────────── */
+(async function init() {
+  await refreshAll();
+  startPolling();
+})();
+</script>
+</body>
+</html>
