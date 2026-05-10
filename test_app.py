@@ -17,7 +17,7 @@ class APITestCase(unittest.TestCase):
         self.assertIn('status', resp.get_json())
 
     def test_inventory_empty(self):
-        resp = self.app.get('/api/inventory')
+        resp = self.app.get('/api/inventory', headers={'X-API-Key': os.getenv('API_SECRET', 'testsecret')})
         self.assertEqual(resp.status_code, 200)
         data = resp.get_json()
         self.assertIn('items', data)

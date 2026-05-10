@@ -14,9 +14,12 @@ import os
 import json
 import logging
 from datetime import datetime
+from dotenv import load_dotenv
 
 import database as db
 from parser import parse_message, parse_command_update, parse_add_item
+
+load_dotenv()
 
 logging.basicConfig(
     format="%(asctime)s [BOT] %(levelname)s: %(message)s",
@@ -58,13 +61,13 @@ STATUS_EMOJI = {
 def is_incharge(user_id: int) -> bool:
     """Check if a user is authorized to update inventory."""
     if not INCHARGE_IDS:
-        return True   # Open mode: everyone can update (useful for testing)
+        return False
     return user_id in INCHARGE_IDS
 
 
 def is_allowed_chat(chat_id: int) -> bool:
     if not ALLOWED_CHATS:
-        return True
+        return False
     return chat_id in ALLOWED_CHATS
 
 
