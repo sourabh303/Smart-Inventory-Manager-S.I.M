@@ -60,23 +60,27 @@ def index():
 
 # ─── Stats ───────────────────────────────────────────────────────────────────
 @app.route("/api/stats")
+@require_api_key
 def api_stats():
     return jsonify(db.get_stats())
 
 
 # ─── Inventory ────────────────────────────────────────────────────────────────
 @app.route("/api/inventory")
+@require_api_key
 def api_inventory():
     items = db.get_all_inventory()
     return jsonify({"items": items, "count": len(items)})
 
 
 @app.route("/api/inventory/low")
+@require_api_key
 def api_low_stock():
     return jsonify({"items": db.get_low_stock()})
 
 
 @app.route("/api/inventory/<int:item_id>", methods=["GET"])
+@require_api_key
 def api_item(item_id):
     with db.get_db() as conn:
         row = conn.execute("SELECT * FROM inventory WHERE id = ?", (item_id,)).fetchone()
@@ -145,6 +149,7 @@ def api_update():
 
 # ─── Requests ─────────────────────────────────────────────────────────────────
 @app.route("/api/requests")
+@require_api_key
 def api_requests():
     status = request.args.get("status")
     reqs = db.get_requests(status)
@@ -178,6 +183,7 @@ def api_update_request(req_id):
 
 # ─── Events / Logs ────────────────────────────────────────────────────────────
 @app.route("/api/events")
+@require_api_key
 def api_events():
     limit = int(request.args.get("limit", 200))
     events = db.get_events(limit)
