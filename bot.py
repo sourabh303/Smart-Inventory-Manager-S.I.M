@@ -14,9 +14,12 @@ import os
 import json
 import logging
 from datetime import datetime
+from dotenv import load_dotenv
 
 import database as db
 from parser import parse_message, parse_command_update, parse_add_item
+
+load_dotenv()
 
 logging.basicConfig(
     format="%(asctime)s [BOT] %(levelname)s: %(message)s",
