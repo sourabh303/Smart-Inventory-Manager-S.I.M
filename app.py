@@ -7,6 +7,7 @@ Run:  python app.py
 import os
 import json
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import wraps
 
@@ -25,11 +26,15 @@ load_dotenv()
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app)
 
+# --- ThreadPoolExecutor for processing webhooks synchronously ---
+executor = ThreadPoolExecutor(max_workers=5)
+
 # --- Rate limiting: 100 requests/hour per IP (customize as needed) ---
 limiter = Limiter(
     get_remote_address,
     app=app,
-    default_limits=["100 per hour"]
+    default_limits=["100 per hour"],
+    storage_uri="memory://"
 )
 
 # ─── Simple API-key auth for write endpoints ──────────────────────────────────
@@ -200,7 +205,7 @@ def webhook(token):
     update_data = request.get_json(force=True)
     # Import here to avoid circular issues at startup
     from bot import process_update
-    threading.Thread(target=process_update, args=(update_data,), daemon=True).start()
+    executor.submit(process_update, update_data)
     return "ok"
 
 
