@@ -94,7 +94,27 @@ def get_db():
         conn.close()
 
 
+def get_active_orders(chat_id, minutes=10):
+    """
+    Return recent orders in this chat within the last N minutes.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM orders
+            WHERE chat_id = ?
+                AND datetime(created_at) >= datetime('now', ?)
+                AND status = 'PENDING'
+            ORDER BY created_at DESC
+            """,
+            (chat_id, f'-{minutes} minutes')
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def init_db():
+    with get_db() as conn:
+        conn.executescript("""
             -- NEW: Orders table for structured order tracking
             CREATE TABLE IF NOT EXISTS orders (
                 order_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,25 +142,7 @@ def init_db():
                 mapped_order_id INTEGER,
                 confidence_score REAL
             );
-    # === NEW: Helper to get active orders for a chat ===
-    def get_active_orders(chat_id, minutes=10):
-            """
-            Return recent orders in this chat within the last N minutes.
-            """
-            with get_db() as conn:
-                    rows = conn.execute(
-                            """
-                            SELECT * FROM orders
-                            WHERE chat_id = ?
-                                AND datetime(created_at) >= datetime('now', ?)
-                                AND status = 'PENDING'
-                            ORDER BY created_at DESC
-                            """,
-                            (chat_id, f'-{minutes} minutes')
-                    ).fetchall()
-                    return [dict(r) for r in rows]
-    with get_db() as conn:
-        conn.executescript("""
+
             CREATE TABLE IF NOT EXISTS inventory (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 item_name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -337,24 +339,35 @@ def set_user_role(user_id: int, role: str) -> bool:
 
 
 def get_stats():
+    """
+    ⚡ Bolt Optimization: Combined 7 individual COUNT queries into 2 aggregate queries
+    using conditional SUM(CASE WHEN ...). This significantly reduces SQLite lock
+    contention and function overhead when generating the dashboard stats payload.
+    """
     with get_db() as conn:
-        total     = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
-        available = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='available'").fetchone()[0]
-        low       = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='low'").fetchone()[0]
-        out       = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='not_available'").fetchone()[0]
-        ordered   = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='ordered'").fetchone()[0]
-        pending_req = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status='pending'"
-        ).fetchone()[0]
-        ordered_req = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status='ordered'"
-        ).fetchone()[0]
+        inv_stats = conn.execute("""
+            SELECT
+                COUNT(*) as total,
+                COALESCE(SUM(CASE WHEN status='available' THEN 1 ELSE 0 END), 0) as available,
+                COALESCE(SUM(CASE WHEN status='low' THEN 1 ELSE 0 END), 0) as low,
+                COALESCE(SUM(CASE WHEN status='not_available' THEN 1 ELSE 0 END), 0) as out,
+                COALESCE(SUM(CASE WHEN status='ordered' THEN 1 ELSE 0 END), 0) as ordered
+            FROM inventory
+        """).fetchone()
+
+        req_stats = conn.execute("""
+            SELECT
+                COALESCE(SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END), 0) as pending_req,
+                COALESCE(SUM(CASE WHEN status='ordered' THEN 1 ELSE 0 END), 0) as ordered_req
+            FROM requests
+        """).fetchone()
+
         return {
-            "total_items":     total,
-            "available":       available,
-            "low_stock":       low,
-            "out_of_stock":    out,
-            "ordered":         ordered,
-            "pending_requests": pending_req,
-            "ordered_requests": ordered_req,
+            "total_items":     inv_stats["total"] if inv_stats else 0,
+            "available":       inv_stats["available"] if inv_stats else 0,
+            "low_stock":       inv_stats["low"] if inv_stats else 0,
+            "out_of_stock":    inv_stats["out"] if inv_stats else 0,
+            "ordered":         inv_stats["ordered"] if inv_stats else 0,
+            "pending_requests": req_stats["pending_req"] if req_stats else 0,
+            "ordered_requests": req_stats["ordered_req"] if req_stats else 0,
         }

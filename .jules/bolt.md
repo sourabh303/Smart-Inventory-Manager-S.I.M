@@ -1,0 +1,3 @@
+## 2024-05-13 - Combine N+1 aggregate queries
+**Learning:** The dashboard frequently polled an endpoint (`/api/stats`) every 15 seconds. This endpoint was running 7 separate sequential `SELECT COUNT(*)` queries against the SQLite database, increasing context switching and overall latency. Combining multiple `COUNT(*)` with `WHERE` clauses into a single query using `SUM(CASE WHEN ... THEN 1 ELSE 0 END)` significantly improves performance.
+**Action:** Always check if multiple sequential aggregate queries against the same table can be combined into a single query using conditional aggregation, especially for frequently polled dashboard stats.
