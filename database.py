@@ -1,71 +1,3 @@
-# === NEW: Create order and order items ===
-def create_order(chat_id, message_id, created_by, items, timestamp=None):
-    """
-    Create a new order and associated order_items.
-    items: list of dicts with keys: name, size, quantity, unit
-    Returns order_id.
-    """
-    with get_db() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO orders (chat_id, message_id, created_by, created_at, status)
-            VALUES (?, ?, ?, ?, 'PENDING')
-            """,
-            (chat_id, message_id, created_by, timestamp or datetime.utcnow().isoformat())
-        )
-        order_id = cur.lastrowid
-        for item in items:
-            conn.execute(
-                """
-                INSERT INTO order_items (order_id, name, size, quantity, unit, status)
-                VALUES (?, ?, ?, ?, ?, 'PENDING')
-                """,
-                (order_id, item.get('name'), item.get('size'), item.get('quantity'), item.get('unit'))
-            )
-        return order_id
-
-# === NEW: Add message mapping ===
-def add_message_mapping(message_id, mapped_order_id, confidence_score):
-    with get_db() as conn:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO message_mapping (message_id, mapped_order_id, confidence_score)
-            VALUES (?, ?, ?)
-            """,
-            (message_id, mapped_order_id, confidence_score)
-        )
-
-# === NEW: Get order by message_id ===
-def get_order_by_message_id(message_id):
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM orders WHERE message_id = ?", (message_id,)
-        ).fetchone()
-        return dict(row) if row else None
-
-# === NEW: Update order/item status ===
-def update_order_status(order_id, status):
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE orders SET status = ? WHERE order_id = ?",
-            (status, order_id)
-        )
-
-def update_order_item_status(item_id, status):
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE order_items SET status = ? WHERE item_id = ?",
-            (status, item_id)
-        )
-
-# === NEW: Get order items by order_id ===
-def get_order_items(order_id):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM order_items WHERE order_id = ?",
-            (order_id,)
-        ).fetchall()
-        return [dict(r) for r in rows]
 """
 database.py — SQLite schema and helper functions for the Inventory Bot
 """
@@ -95,6 +27,8 @@ def get_db():
 
 
 def init_db():
+    with get_db() as conn:
+        conn.executescript("""
             -- NEW: Orders table for structured order tracking
             CREATE TABLE IF NOT EXISTS orders (
                 order_id    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,25 +56,6 @@ def init_db():
                 mapped_order_id INTEGER,
                 confidence_score REAL
             );
-    # === NEW: Helper to get active orders for a chat ===
-    def get_active_orders(chat_id, minutes=10):
-            """
-            Return recent orders in this chat within the last N minutes.
-            """
-            with get_db() as conn:
-                    rows = conn.execute(
-                            """
-                            SELECT * FROM orders
-                            WHERE chat_id = ?
-                                AND datetime(created_at) >= datetime('now', ?)
-                                AND status = 'PENDING'
-                            ORDER BY created_at DESC
-                            """,
-                            (chat_id, f'-{minutes} minutes')
-                    ).fetchall()
-                    return [dict(r) for r in rows]
-    with get_db() as conn:
-        conn.executescript("""
             CREATE TABLE IF NOT EXISTS inventory (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 item_name   TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -190,6 +105,8 @@ def init_db():
         """)
 
     print("[DB] Database initialized.")
+
+
 
 
 # ─── Inventory helpers ────────────────────────────────────────────────────────
@@ -337,24 +254,120 @@ def set_user_role(user_id: int, role: str) -> bool:
 
 
 def get_stats():
+    # ⚡ Bolt: Optimized 7 separate count queries into 2 aggregate queries
+    # The dashboard polls this every 15s, so reducing query overhead is critical
     with get_db() as conn:
-        total     = conn.execute("SELECT COUNT(*) FROM inventory").fetchone()[0]
-        available = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='available'").fetchone()[0]
-        low       = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='low'").fetchone()[0]
-        out       = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='not_available'").fetchone()[0]
-        ordered   = conn.execute("SELECT COUNT(*) FROM inventory WHERE status='ordered'").fetchone()[0]
-        pending_req = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status='pending'"
-        ).fetchone()[0]
-        ordered_req = conn.execute(
-            "SELECT COUNT(*) FROM requests WHERE status='ordered'"
-        ).fetchone()[0]
+        # Note: the db uses sqlite3.Row via row_factory, which allows dictionary-like access
+        inv_row = conn.execute("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status='available' THEN 1 ELSE 0 END) as available,
+                SUM(CASE WHEN status='low' THEN 1 ELSE 0 END) as low,
+                SUM(CASE WHEN status='not_available' THEN 1 ELSE 0 END) as out,
+                SUM(CASE WHEN status='ordered' THEN 1 ELSE 0 END) as ordered
+            FROM inventory
+        """).fetchone()
+
+        req_row = conn.execute("""
+            SELECT
+                SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status='ordered' THEN 1 ELSE 0 END) as ordered
+            FROM requests
+        """).fetchone()
+
         return {
-            "total_items":     total,
-            "available":       available,
-            "low_stock":       low,
-            "out_of_stock":    out,
-            "ordered":         ordered,
-            "pending_requests": pending_req,
-            "ordered_requests": ordered_req,
+            "total_items":     inv_row["total"] or 0,
+            "available":       inv_row["available"] or 0,
+            "low_stock":       inv_row["low"] or 0,
+            "out_of_stock":    inv_row["out"] or 0,
+            "ordered":         inv_row["ordered"] or 0,
+            "pending_requests": req_row["pending"] or 0,
+            "ordered_requests": req_row["ordered"] or 0,
         }
+
+# === NEW: Create order and order items ===
+def create_order(chat_id, message_id, created_by, items, timestamp=None):
+    """
+    Create a new order and associated order_items.
+    items: list of dicts with keys: name, size, quantity, unit
+    Returns order_id.
+    """
+    with get_db() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO orders (chat_id, message_id, created_by, created_at, status)
+            VALUES (?, ?, ?, ?, 'PENDING')
+            """,
+            (chat_id, message_id, created_by, timestamp or datetime.utcnow().isoformat())
+        )
+        order_id = cur.lastrowid
+        for item in items:
+            conn.execute(
+                """
+                INSERT INTO order_items (order_id, name, size, quantity, unit, status)
+                VALUES (?, ?, ?, ?, ?, 'PENDING')
+                """,
+                (order_id, item.get('name'), item.get('size'), item.get('quantity'), item.get('unit'))
+            )
+        return order_id
+
+# === NEW: Add message mapping ===
+def add_message_mapping(message_id, mapped_order_id, confidence_score):
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO message_mapping (message_id, mapped_order_id, confidence_score)
+            VALUES (?, ?, ?)
+            """,
+            (message_id, mapped_order_id, confidence_score)
+        )
+
+# === NEW: Get order by message_id ===
+def get_order_by_message_id(message_id):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM orders WHERE message_id = ?", (message_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+# === NEW: Update order/item status ===
+def update_order_status(order_id, status):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE orders SET status = ? WHERE order_id = ?",
+            (status, order_id)
+        )
+
+def update_order_item_status(item_id, status):
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE order_items SET status = ? WHERE item_id = ?",
+            (status, item_id)
+        )
+
+# === NEW: Get order items by order_id ===
+def get_order_items(order_id):
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM order_items WHERE order_id = ?",
+            (order_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+# === NEW: Helper to get active orders for a chat ===
+def get_active_orders(chat_id, minutes=10):
+        """
+        Return recent orders in this chat within the last N minutes.
+        """
+        with get_db() as conn:
+                rows = conn.execute(
+                        """
+                        SELECT * FROM orders
+                        WHERE chat_id = ?
+                            AND datetime(created_at) >= datetime('now', ?)
+                            AND status = 'PENDING'
+                        ORDER BY created_at DESC
+                        """,
+                        (chat_id, f'-{minutes} minutes')
+                ).fetchall()
+                return [dict(r) for r in rows]
